@@ -1,12 +1,15 @@
-
 import axios from 'axios';
 
+const defaultBaseUrl = import.meta.env.PROD
+  ? '/api'
+  : 'http://localhost:8080/api';
+
 const API = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8080/api',
+  baseURL: import.meta.env.VITE_API_URL || defaultBaseUrl,
   headers: {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
   },
-  timeout: 15000
+  timeout: 15000,
 });
 
 API.interceptors.request.use(
@@ -38,5 +41,3 @@ API.interceptors.response.use(
 );
 
 export default API;
-
-

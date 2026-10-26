@@ -1,7 +1,5 @@
-
-
-
 import Attendance from '../models/Attendance.js';
+import Company from '../models/Company.js';
 import Employee from '../models/Employee.js';
 
 const validId = (id) => /^[a-f\d]{24}$/i.test(String(id));
@@ -12,6 +10,15 @@ const getToday = () => {
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+};
+
+const isLateCheckIn = (checkInDate, officeStartTime = '09:00', graceMinutes = 15) => {
+  const [startHour, startMinute] = String(officeStartTime)
+    .split(':')
+    .map((n) => Number(n) || 0);
+  const cutoffMinutes = startHour * 60 + startMinute + (Number(graceMinutes) || 0);
+  const actualMinutes = checkInDate.getHours() * 60 + checkInDate.getMinutes();
+  return actualMinutes > cutoffMinutes;
 };
 
 export const listAttendance = async (req, res, next) => {
@@ -25,9 +32,12 @@ export const listAttendance = async (req, res, next) => {
       });
 
       if (!employee) {
-        return res.status(404).json({
-          success: false,
-          message: 'Employee profile not found.',
+        return res.status(200).json({
+          success: true,
+          data: [],
+          attendance: [],
+          records: [],
+          message: 'Employee profile not linked yet.',
         });
       }
 
@@ -46,11 +56,20 @@ export const listAttendance = async (req, res, next) => {
     if (req.query.date) filter.date = req.query.date;
 
     const records = await Attendance.find(filter)
-      .populate('employeeId', 'employeeCode firstName lastName email')
-      .sort({ date: -1 })
-      .limit(200);
+      .populate({
+        path: 'employeeId',
+        select: 'employeeCode firstName lastName email departmentId',
+        populate: { path: 'departmentId', select: 'name' },
+      })
+      .sort({ date: -1, createdAt: -1 })
+      .limit(300);
 
-    res.json({ success: true, data: records });
+    res.json({
+      success: true,
+      data: records,
+      attendance: records,
+      records,
+    });
   } catch (error) {
     next(error);
   }
@@ -112,12 +131,22 @@ export const checkIn = async (req, res, next) => {
       });
     }
 
+    const company = await Company.findById(req.user.companyId);
+    const now = new Date();
+    const late = isLateCheckIn(
+      now,
+      company?.officeStartTime || '09:00',
+      company?.graceMinutes ?? 15
+    );
+    const status = late ? 'late' : 'present';
+
     const record = await Attendance.findOneAndUpdate(
       { companyId: req.user.companyId, employeeId, date },
       {
         $set: {
-          checkIn: new Date(),
-          status: 'present',
+          checkIn: now,
+          status,
+          notes: req.body.notes ? String(req.body.notes).slice(0, 500) : '',
         },
         $setOnInsert: {
           companyId: req.user.companyId,
@@ -126,9 +155,16 @@ export const checkIn = async (req, res, next) => {
         },
       },
       { new: true, upsert: true, runValidators: true }
-    );
+    ).populate('employeeId', 'employeeCode firstName lastName email');
 
-    res.status(201).json({ success: true, data: record });
+    res.status(201).json({
+      success: true,
+      message: late
+        ? `Check-in recorded as LATE (after ${company?.officeStartTime || '09:00'} + ${company?.graceMinutes ?? 15}m grace).`
+        : 'Check-in recorded as PRESENT.',
+      data: record,
+      record,
+    });
   } catch (error) {
     if (error.code === 11000) {
       return res.status(409).json({
@@ -187,13 +223,33 @@ export const checkOut = async (req, res, next) => {
       });
     }
 
-    record.checkOut = new Date();
-    await record.save();
+    const company = await Company.findById(req.user.companyId);
+    const halfDayThreshold = company?.halfDayHours ?? 5;
 
-    res.json({ success: true, data: record });
+    const now = new Date();
+    const diffMs = Math.max(0, now.getTime() - new Date(record.checkIn).getTime());
+    const workHours = Number((diffMs / (1000 * 60 * 60)).toFixed(2));
+
+    record.checkOut = now;
+    record.workHours = workHours;
+
+    if (workHours < halfDayThreshold) {
+      record.status = 'half-day';
+    }
+
+    await record.save();
+    await record.populate('employeeId', 'employeeCode firstName lastName email');
+
+    res.json({
+      success: true,
+      message:
+        record.status === 'half-day'
+          ? `Check-out recorded (${workHours} hrs — marked as Half Day since under ${halfDayThreshold} hrs).`
+          : `Check-out recorded (${workHours} hrs worked).`,
+      data: record,
+      record,
+    });
   } catch (error) {
     next(error);
   }
 };
-
-

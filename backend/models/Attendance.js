@@ -1,5 +1,3 @@
-
-
 import mongoose from 'mongoose';
 
 const attendanceSchema = new mongoose.Schema(
@@ -18,6 +16,7 @@ const attendanceSchema = new mongoose.Schema(
     date: { type: String, required: true },
     checkIn: { type: Date, default: null },
     checkOut: { type: Date, default: null },
+    workHours: { type: Number, default: 0, min: 0 },
     status: {
       type: String,
       enum: ['present', 'late', 'half-day', 'absent'],
@@ -35,6 +34,3 @@ attendanceSchema.index(
 
 export default mongoose.models.Attendance ||
   mongoose.model('Attendance', attendanceSchema);
-
-
-  

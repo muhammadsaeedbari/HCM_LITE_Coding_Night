@@ -1,13 +1,121 @@
-
-
+import bcrypt from 'bcryptjs';
+import Company from '../models/Company.js';
 import Department from '../models/Department.js';
 import Designation from '../models/Designation.js';
 import Employee from '../models/Employee.js';
+import User from '../models/User.js';
 
 const fail = (res, status, message) =>
   res.status(status).json({ success: false, message });
 
 const validId = (id) => /^[a-f\d]{24}$/i.test(String(id));
+
+export const getCompanySettings = async (req, res, next) => {
+  try {
+    const company = await Company.findById(req.user.companyId);
+    if (!company) return fail(res, 404, 'Company settings not found.');
+
+    res.json({
+      success: true,
+      data: company,
+      settings: company,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const updateCompanySettings = async (req, res, next) => {
+  try {
+    const {
+      name,
+      officeStartTime,
+      graceMinutes,
+      halfDayHours,
+      leaveQuota,
+      weekendDays,
+      officeLocation,
+    } = req.body;
+
+    const updates = {};
+
+    if (typeof name === 'string' && name.trim()) {
+      updates.name = name.trim();
+    }
+
+    if (typeof officeStartTime === 'string') {
+      if (!/^([01]\d|2[0-3]):([0-5]\d)$/.test(officeStartTime.trim())) {
+        return fail(res, 400, 'Office start time must use HH:MM (24-hour) format.');
+      }
+      updates.officeStartTime = officeStartTime.trim();
+    }
+
+    if (graceMinutes !== undefined) {
+      const gm = Number(graceMinutes);
+      if (!Number.isFinite(gm) || gm < 0 || gm > 240) {
+        return fail(res, 400, 'Grace minutes must be between 0 and 240.');
+      }
+      updates.graceMinutes = gm;
+    }
+
+    if (halfDayHours !== undefined) {
+      const hdh = Number(halfDayHours);
+      if (!Number.isFinite(hdh) || hdh <= 0 || hdh > 12) {
+        return fail(res, 400, 'Half-day hours must be between 1 and 12.');
+      }
+      updates.halfDayHours = hdh;
+    }
+
+    if (leaveQuota !== undefined) {
+      const lq = Number(leaveQuota);
+      if (!Number.isFinite(lq) || lq < 0 || lq > 365) {
+        return fail(res, 400, 'Yearly leave quota must be between 0 and 365.');
+      }
+      updates.leaveQuota = lq;
+    }
+
+    if (Array.isArray(weekendDays)) {
+      const normalized = weekendDays
+        .map((d) => Number(d))
+        .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+      updates.weekendDays = [...new Set(normalized)];
+    }
+
+    if (officeLocation && typeof officeLocation === 'object') {
+      updates.officeLocation = {
+        latitude:
+          officeLocation.latitude !== undefined && officeLocation.latitude !== ''
+            ? Number(officeLocation.latitude)
+            : null,
+        longitude:
+          officeLocation.longitude !== undefined && officeLocation.longitude !== ''
+            ? Number(officeLocation.longitude)
+            : null,
+        radiusMeters:
+          officeLocation.radiusMeters !== undefined
+            ? Math.max(10, Number(officeLocation.radiusMeters) || 150)
+            : 150,
+      };
+    }
+
+    const company = await Company.findByIdAndUpdate(
+      req.user.companyId,
+      { $set: updates },
+      { new: true, runValidators: true }
+    );
+
+    if (!company) return fail(res, 404, 'Company not found.');
+
+    res.json({
+      success: true,
+      message: 'Company settings updated successfully.',
+      data: company,
+      settings: company,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
 export const listDepartments = async (req, res, next) => {
   try {
@@ -15,7 +123,7 @@ export const listDepartments = async (req, res, next) => {
       companyId: req.user.companyId,
     }).sort({ name: 1 });
 
-    res.json({ success: true, data: items });
+    res.json({ success: true, data: items, departments: items });
   } catch (error) {
     next(error);
   }
@@ -33,7 +141,7 @@ export const createDepartment = async (req, res, next) => {
       companyId: req.user.companyId,
     });
 
-    res.status(201).json({ success: true, data: item });
+    res.status(201).json({ success: true, data: item, department: item });
   } catch (error) {
     if (error.code === 11000) {
       return fail(res, 409, 'Department already exists.');
@@ -61,7 +169,7 @@ export const updateDepartment = async (req, res, next) => {
     );
 
     if (!item) return fail(res, 404, 'Department not found.');
-    res.json({ success: true, data: item });
+    res.json({ success: true, data: item, department: item });
   } catch (error) {
     next(error);
   }
@@ -75,7 +183,7 @@ export const listDesignations = async (req, res, next) => {
       .populate('departmentId', 'name')
       .sort({ title: 1 });
 
-    res.json({ success: true, data: items });
+    res.json({ success: true, data: items, designations: items });
   } catch (error) {
     next(error);
   }
@@ -104,7 +212,7 @@ export const createDesignation = async (req, res, next) => {
       companyId: req.user.companyId,
     });
 
-    res.status(201).json({ success: true, data: item });
+    res.status(201).json({ success: true, data: item, designation: item });
   } catch (error) {
     if (error.code === 11000) {
       return fail(res, 409, 'Designation already exists in this department.');
@@ -144,7 +252,7 @@ export const updateDesignation = async (req, res, next) => {
     );
 
     if (!item) return fail(res, 404, 'Designation not found.');
-    res.json({ success: true, data: item });
+    res.json({ success: true, data: item, designation: item });
   } catch (error) {
     next(error);
   }
@@ -152,15 +260,17 @@ export const updateDesignation = async (req, res, next) => {
 
 export const listEmployees = async (req, res, next) => {
   try {
-    const items = await Employee.find({
-      companyId: req.user.companyId,
-    })
-      .select('-basicSalary -emergencyContact')
+    const filter = { companyId: req.user.companyId };
+    if (req.user.role === 'employee') {
+      filter.userId = req.user._id;
+    }
+
+    const items = await Employee.find(filter)
       .populate('departmentId', 'name')
       .populate('designationId', 'title')
       .sort({ createdAt: -1 });
 
-    res.json({ success: true, data: items });
+    res.json({ success: true, data: items, employees: items });
   } catch (error) {
     next(error);
   }
@@ -175,6 +285,7 @@ export const createEmployee = async (req, res, next) => {
       firstName,
       lastName,
       email,
+      password,
       phone = '',
       dateOfJoining,
       employmentType = 'full-time',
@@ -193,12 +304,32 @@ export const createEmployee = async (req, res, next) => {
       !dateOfJoining ||
       basicSalary === undefined ||
       !Number.isFinite(Number(basicSalary)) ||
-      Number(basicSalary) < 0
+      Number(basicSalary) <= 0
     ) {
-      return fail(res, 400, 'Please provide all required employee fields.');
+      return fail(
+        res,
+        400,
+        'Please provide all required fields and ensure basic salary is greater than 0.'
+      );
     }
 
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(normalizedEmail)) {
+      return fail(res, 400, 'Please enter a valid email address.');
+    }
+
+    const rawPassword =
+      typeof password === 'string' && password.trim().length >= 6
+        ? password.trim()
+        : 'Employee@123';
+
     const companyId = req.user.companyId;
+
+    const existingUser = await User.findOne({ email: normalizedEmail });
+    if (existingUser) {
+      return fail(res, 409, 'Email address is already used by another user.');
+    }
 
     const department = await Department.findOne({
       _id: departmentId,
@@ -217,27 +348,50 @@ export const createEmployee = async (req, res, next) => {
       return fail(res, 400, 'Department or designation is invalid.');
     }
 
-    const employee = await Employee.create({
-      employeeCode,
+    const hashedPassword = await bcrypt.hash(rawPassword, 12);
+
+    const newUser = await User.create({
+      name: `${firstName.trim()} ${lastName.trim()}`.trim(),
+      email: normalizedEmail,
+      password: hashedPassword,
+      role: 'employee',
       companyId,
-      departmentId,
-      designationId,
-      firstName,
-      lastName,
-      email,
-      phone,
-      dateOfJoining,
-      employmentType,
-      basicSalary: Number(basicSalary),
-      address,
-      emergencyContact,
+      mustChangePassword: false,
+      isActive: true,
     });
 
-    res.status(201).json({
-      success: true,
-      message: 'Employee created. Login account can be created separately.',
-      data: employee,
-    });
+    try {
+      const employee = await Employee.create({
+        employeeCode: employeeCode.trim().toUpperCase(),
+        userId: newUser._id,
+        companyId,
+        departmentId,
+        designationId,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        email: normalizedEmail,
+        phone,
+        dateOfJoining,
+        employmentType,
+        basicSalary: Number(basicSalary),
+        address,
+        emergencyContact,
+      });
+
+      const populated = await Employee.findById(employee._id)
+        .populate('departmentId', 'name')
+        .populate('designationId', 'title');
+
+      res.status(201).json({
+        success: true,
+        message: `Employee and login account created (${normalizedEmail}).`,
+        data: populated,
+        employee: populated,
+      });
+    } catch (empError) {
+      await User.findByIdAndDelete(newUser._id);
+      throw empError;
+    }
   } catch (error) {
     if (error.code === 11000) {
       return fail(res, 409, 'Employee code or email already exists.');
@@ -249,6 +403,13 @@ export const createEmployee = async (req, res, next) => {
 export const updateEmployee = async (req, res, next) => {
   try {
     if (!validId(req.params.id)) return fail(res, 400, 'Invalid employee ID.');
+
+    const existing = await Employee.findOne({
+      _id: req.params.id,
+      companyId: req.user.companyId,
+    });
+
+    if (!existing) return fail(res, 404, 'Employee not found.');
 
     const allowedFields = [
       'employeeCode',
@@ -265,11 +426,25 @@ export const updateEmployee = async (req, res, next) => {
 
     const changes = {};
     for (const field of allowedFields) {
-      if (field in req.body) changes[field] = req.body[field];
+      if (field in req.body) {
+        if (field === 'basicSalary') {
+          const sal = Number(req.body.basicSalary);
+          if (!Number.isFinite(sal) || sal <= 0) {
+            return fail(res, 400, 'Salary must be greater than 0.');
+          }
+          changes.basicSalary = sal;
+        } else {
+          changes[field] = req.body[field];
+        }
+      }
     }
 
     if (req.body.email !== undefined) {
-      if (typeof req.body.email !== 'string' || !req.body.email.trim()) {
+      const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (
+        typeof req.body.email !== 'string' ||
+        !emailPattern.test(req.body.email.trim().toLowerCase())
+      ) {
         return fail(res, 400, 'Valid email is required.');
       }
       changes.email = req.body.email.trim().toLowerCase();
@@ -283,13 +458,6 @@ export const updateEmployee = async (req, res, next) => {
         changes[field] = req.body[field];
       }
     }
-
-    const existing = await Employee.findOne({
-      _id: req.params.id,
-      companyId: req.user.companyId,
-    });
-
-    if (!existing) return fail(res, 404, 'Employee not found.');
 
     const departmentId = changes.departmentId || existing.departmentId;
     const designationId = changes.designationId || existing.designationId;
@@ -311,9 +479,40 @@ export const updateEmployee = async (req, res, next) => {
       { _id: req.params.id, companyId: req.user.companyId },
       changes,
       { new: true, runValidators: true }
-    );
+    )
+      .populate('departmentId', 'name')
+      .populate('designationId', 'title');
 
-    res.json({ success: true, data: item });
+    // Sync linked User login (or create one if missing)
+    const userUpdates = {
+      name: `${item.firstName} ${item.lastName}`.trim(),
+      email: item.email,
+      isActive: item.status === 'active',
+    };
+
+    if (typeof req.body.password === 'string' && req.body.password.trim().length >= 6) {
+      userUpdates.password = await bcrypt.hash(req.body.password.trim(), 12);
+    }
+
+    if (item.userId) {
+      await User.findByIdAndUpdate(item.userId, userUpdates);
+    } else if (userUpdates.password) {
+      const createdUser = await User.create({
+        ...userUpdates,
+        role: 'employee',
+        companyId: req.user.companyId,
+        mustChangePassword: false,
+      });
+      item.userId = createdUser._id;
+      await item.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Employee updated successfully.',
+      data: item,
+      employee: item,
+    });
   } catch (error) {
     if (error.code === 11000) {
       return fail(res, 409, 'Employee code or email already exists.');
@@ -322,3 +521,30 @@ export const updateEmployee = async (req, res, next) => {
   }
 };
 
+export const deleteEmployee = async (req, res, next) => {
+  try {
+    if (!validId(req.params.id)) return fail(res, 400, 'Invalid employee ID.');
+
+    const existing = await Employee.findOneAndDelete({
+      _id: req.params.id,
+      companyId: req.user.companyId,
+    });
+
+    if (!existing) return fail(res, 404, 'Employee not found.');
+
+    if (existing.userId) {
+      await User.findOneAndDelete({
+        _id: existing.userId,
+        companyId: req.user.companyId,
+        role: 'employee',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Employee and associated login account deleted.',
+    });
+  } catch (error) {
+    next(error);
+  }
+};

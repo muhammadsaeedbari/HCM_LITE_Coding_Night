@@ -1,4 +1,3 @@
-
 import mongoose from 'mongoose';
 
 const companySchema = new mongoose.Schema(
@@ -21,6 +20,11 @@ const companySchema = new mongoose.Schema(
     halfDayHours: {
       type: Number,
       default: 5,
+      min: 0,
+    },
+    leaveQuota: {
+      type: Number,
+      default: 20,
       min: 0,
     },
     weekendDays: {

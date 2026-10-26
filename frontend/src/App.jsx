@@ -1,4 +1,3 @@
-
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 
@@ -11,6 +10,9 @@ import Designations from '../pages/Designations.jsx';
 import Attendance from '../pages/Attendance.jsx';
 import Leaves from '../pages/Leaves.jsx';
 import Payroll from '../pages/Payroll.jsx';
+import Announcements from '../pages/Announcements.jsx';
+import Settings from '../pages/Settings.jsx';
+import Profile from '../pages/Profile.jsx';
 
 import ProtectedRoute from '../components/ProtectedRoute.jsx';
 import HRLayout from '../components/HRLayout.jsx';
@@ -18,28 +20,21 @@ import HRLayout from '../components/HRLayout.jsx';
 import './App.css';
 
 function App() {
-  const isAuthenticated = useSelector(
-    (state) => state.auth.isAuthenticated
-  );
+  const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
 
   return (
     <Routes>
       <Route
         path="/"
         element={
-          <Navigate
-            to={isAuthenticated ? '/dashboard' : '/login'}
-            replace
-          />
+          <Navigate to={isAuthenticated ? '/dashboard' : '/login'} replace />
         }
       />
 
       <Route
         path="/login"
         element={
-          isAuthenticated
-            ? <Navigate to="/dashboard" replace />
-            : <Login />
+          isAuthenticated ? <Navigate to="/dashboard" replace /> : <Login />
         }
       />
 
@@ -48,19 +43,23 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<HRLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/employees" element={<Employees />} />
-          <Route path="/departments" element={<Departments />} />
-          <Route path="/designations" element={<Designations />} />
           <Route path="/attendance" element={<Attendance />} />
           <Route path="/leaves" element={<Leaves />} />
           <Route path="/payroll" element={<Payroll />} />
+          <Route path="/announcements" element={<Announcements />} />
+          <Route path="/profile" element={<Profile />} />
+
+          {/* Admin & HR Protected Routes */}
+          <Route element={<ProtectedRoute allowedRoles={['admin', 'hr']} />}>
+            <Route path="/employees" element={<Employees />} />
+            <Route path="/departments" element={<Departments />} />
+            <Route path="/designations" element={<Designations />} />
+            <Route path="/settings" element={<Settings />} />
+          </Route>
         </Route>
       </Route>
 
-      <Route
-        path="*"
-        element={<Navigate to="/" replace />}
-      />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

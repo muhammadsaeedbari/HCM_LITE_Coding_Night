@@ -1,6 +1,3 @@
-
-
-
 import mongoose from 'mongoose';
 
 const payrollSchema = new mongoose.Schema(
@@ -20,6 +17,41 @@ const payrollSchema = new mongoose.Schema(
       type: String,
       required: true,
       match: /^\d{4}-(0[1-9]|1[0-2])$/
+    },
+    workingDays: {
+      type: Number,
+      default: 22,
+      min: 1
+    },
+    presentDays: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    absentDays: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    halfDays: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    leaveDays: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    perDaySalary: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    attendanceDeduction: {
+      type: Number,
+      default: 0,
+      min: 0
     },
     basicSalary: {
       type: Number,
@@ -77,5 +109,3 @@ const Payroll =
   mongoose.model('Payroll', payrollSchema);
 
 export default Payroll;
-
-

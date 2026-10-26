@@ -1,6 +1,3 @@
-
-
-
 import { Outlet } from 'react-router-dom';
 import Navbar from './Navbar.jsx';
 import Sidebar from './Sidebar.jsx';
@@ -10,7 +7,7 @@ function HRLayout() {
     <div className="hr-app">
       <Navbar />
 
-      <div className="d-flex">
+      <div className="d-flex flex-column flex-md-row">
         <Sidebar />
 
         <main
@@ -25,5 +22,3 @@ function HRLayout() {
 }
 
 export default HRLayout;
-
-

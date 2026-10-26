@@ -1,5 +1,3 @@
-
-
 import mongoose from 'mongoose';
 
 const leaveSchema = new mongoose.Schema(
@@ -22,6 +20,7 @@ const leaveSchema = new mongoose.Schema(
     },
     startDate: { type: Date, required: true },
     endDate: { type: Date, required: true },
+    days: { type: Number, default: 1, min: 1 },
     reason: { type: String, required: true, trim: true, maxlength: 1000 },
     status: {
       type: String,
@@ -43,6 +42,3 @@ leaveSchema.index({ companyId: 1, employeeId: 1, startDate: 1, endDate: 1 });
 
 export default mongoose.models.Leave ||
   mongoose.model('Leave', leaveSchema);
-
-
-  
